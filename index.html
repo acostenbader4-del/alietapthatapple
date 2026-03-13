@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tap That Apple 🍎</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --red: #e82d2d; --red-dark: #c01f1f;
+    --green: #2d8a2d; --yellow: #f5c542;
+    --cream: #fdf6ec; --brown: #5c3317;
+    --shadow: 0 4px 20px rgba(0,0,0,0.15); --radius: 18px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Nunito', sans-serif; background: var(--cream); min-height: 100vh; overflow-x: hidden; }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background: radial-gradient(ellipse at 20% 50%, rgba(232,45,45,0.06) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 20%, rgba(45,138,45,0.06) 0%, transparent 60%);
+  }
+  .apple-bg { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+  .apple-bg span { position: absolute; opacity: 0.06; animation: fall linear infinite; }
+  @keyframes fall { 0% { transform: translateY(-60px) rotate(0deg); } 100% { transform: translateY(110vh) rotate(360deg); } }
+
+  .page { display: none; position: relative; z-index: 1; min-height: 100vh; }
+  .page.active { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+
+  .logo { font-family: 'Fredoka One', cursive; font-size: clamp(2.5rem,8vw,4rem); color: var(--red); text-shadow: 3px 3px 0 var(--red-dark), 0 6px 20px rgba(232,45,45,0.3); letter-spacing: 1px; text-align: center; line-height: 1.1; }
+  .logo .emoji { font-size: 0.85em; display: inline-block; animation: wobble 2s ease-in-out infinite; }
+  @keyframes wobble { 0%,100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
+  .tagline { color: var(--brown); font-size: 1rem; font-weight: 600; margin-top: 6px; opacity: 0.7; letter-spacing: 2px; text-transform: uppercase; text-align: center; }
+
+  .card { background: white; border-radius: var(--radius); padding: 28px 32px; box-shadow: var(--shadow), 0 0 0 2px rgba(232,45,45,0.08); width: 100%; max-width: 460px; margin-top: 20px; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 1.05rem; border: none; border-radius: 50px; padding: 14px 28px; cursor: pointer; transition: all 0.15s ease; width: 100%; letter-spacing: 0.3px; }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--red); color: white; box-shadow: 0 4px 0 var(--red-dark), 0 6px 20px rgba(232,45,45,0.35); }
+  .btn-primary:hover { background: #f03535; transform: translateY(-1px); }
+  .btn-secondary { background: white; color: var(--red); border: 2.5px solid var(--red); box-shadow: 0 3px 0 rgba(232,45,45,0.3); }
+  .btn-secondary:hover { background: #fff5f5; }
+  .btn-green { background: var(--green); color: white; box-shadow: 0 4px 0 #1e6b1e, 0 6px 20px rgba(45,138,45,0.35); }
+  .btn-green:hover { background: #359935; }
+  .btn-gray { background: #f0f0f0; color: #666; box-shadow: 0 3px 0 #ddd; }
+  .btn-out { background: var(--yellow); color: var(--brown); box-shadow: 0 4px 0 #c9a200; font-size: 1.1rem; }
+  .btn-danger { background: #ff4444; color: white; box-shadow: 0 4px 0 #cc0000; }
+  .btn-danger:hover { background: #ff2222; }
+  .btn-sm { padding: 10px 20px; font-size: 0.9rem; width: auto; }
+
+  input[type=text], select { width: 100%; padding: 13px 16px; border: 2.5px solid #e8d5c0; border-radius: 12px; font-family: 'Nunito', sans-serif; font-size: 1rem; font-weight: 600; color: #333; background: #fffaf4; outline: none; transition: border-color 0.2s; }
+  input[type=text]:focus, select:focus { border-color: var(--red); }
+  .input-group { margin-bottom: 14px; }
+  .input-group label { display: block; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; color: var(--brown); margin-bottom: 6px; }
+
+  .room-code-display { font-family: 'Fredoka One', cursive; font-size: 3.5rem; color: var(--red); letter-spacing: 8px; text-align: center; text-shadow: 2px 2px 0 rgba(232,45,45,0.2); }
+  .room-code-label { text-align: center; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #999; margin-bottom: 8px; }
+  #qr-canvas { border-radius: 12px; }
+  .qr-wrap { text-align: center; margin: 16px 0; }
+
+  .player-list { list-style: none; }
+  .player-list li { display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 8px; background: #fff8f0; border-radius: 10px; font-weight: 700; color: #333; border: 1.5px solid #f0dcc8; animation: popIn 0.3s cubic-bezier(0.175,0.885,0.32,1.275); }
+  @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  .player-list li .apple-icon { font-size: 1.3rem; }
+  .host-badge { margin-left: auto; font-size: 0.7rem; background: var(--red); color: white; padding: 2px 8px; border-radius: 20px; font-weight: 800; text-transform: uppercase; }
+
+  /* Category picker */
+  .suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip { background: #fff8f0; border: 2px solid #f0dcc8; border-radius: 50px; padding: 6px 14px; font-size: 0.85rem; font-weight: 700; color: var(--brown); cursor: pointer; transition: all 0.15s; }
+  .chip:hover { background: var(--red); color: white; border-color: var(--red); }
+
+  /* Game layout */
+  .game-layout { display: flex; gap: 16px; width: 100%; max-width: 900px; align-items: flex-start; }
+  .game-main { flex: 1; min-width: 0; }
+  .game-sidebar { width: 210px; flex-shrink: 0; }
+  @media (max-width: 700px) { .game-layout { flex-direction: column; } .game-sidebar { width: 100%; } }
+
+  .category-banner { background: var(--red); color: white; font-family: 'Fredoka One', cursive; font-size: clamp(1rem,4vw,1.3rem); padding: 9px 18px; border-radius: 50px; text-align: center; box-shadow: 0 4px 0 var(--red-dark); letter-spacing: 1px; }
+  .round-badge { background: #f0e8de; padding: 5px 14px; border-radius: 20px; font-weight: 800; font-size: 0.85rem; color: var(--brown); }
+
+  .letter-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 6px; margin: 14px 0; }
+  @media (max-width: 400px) { .letter-grid { grid-template-columns: repeat(5,1fr); gap: 5px; } }
+  .letter-btn { aspect-ratio: 1; border-radius: 10px; border: none; font-family: 'Fredoka One', cursive; font-size: 1.15rem; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; }
+  .letter-btn.available { background: white; color: var(--red); box-shadow: 0 3px 0 #e0c8b0; border: 2px solid #f0dcc8; }
+  .letter-btn.available:hover { transform: translateY(-2px) scale(1.05); }
+  .letter-btn.used { background: #f0f0f0; color: #ccc; cursor: not-allowed; border: 2px solid #e8e8e8; text-decoration: line-through; }
+  .letter-btn.selected { background: var(--red); color: white; box-shadow: 0 3px 0 var(--red-dark); border: 2px solid var(--red-dark); transform: scale(1.08); }
+
+  .answer-area { background: #fff8f0; border-radius: var(--radius); padding: 16px; border: 2px solid #f0dcc8; margin-top: 12px; }
+  .answer-area h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; color: #999; margin-bottom: 10px; font-weight: 700; }
+  .selected-letter-display { font-family: 'Fredoka One', cursive; font-size: 1.8rem; color: var(--red); display: inline-block; background: #fff; border: 3px solid var(--red); border-radius: 10px; width: 48px; height: 48px; line-height: 42px; text-align: center; margin-right: 10px; vertical-align: middle; box-shadow: 0 3px 0 var(--red-dark); }
+
+  .sidebar-card { background: white; border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 12px; }
+  .sidebar-card h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #999; margin-bottom: 12px; font-weight: 700; }
+
+  .player-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; margin-bottom: 6px; font-weight: 700; font-size: 0.9rem; }
+  .player-row.active-turn { background: #fff0f0; border: 2px solid var(--red); }
+  .player-row.out { opacity: 0.4; }
+  .player-row .score { margin-left: auto; font-size: 0.8rem; color: #888; font-weight: 800; }
+  .out-badge { font-size: 0.65rem; background: #ffeb80; color: var(--brown); padding: 2px 6px; border-radius: 20px; font-weight: 800; text-transform: uppercase; margin-left: 4px; }
+
+  .your-turn-banner { background: linear-gradient(135deg, var(--red), #ff6b35); color: white; font-family: 'Fredoka One', cursive; font-size: 1.2rem; padding: 10px 20px; border-radius: 12px; text-align: center; letter-spacing: 1px; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 4px 0 rgba(192,31,31,0.5), 0 0 0 0 rgba(232,45,45,0.4); } 50% { box-shadow: 0 4px 0 rgba(192,31,31,0.5), 0 0 0 8px rgba(232,45,45,0); } }
+  .watch-banner { background: #f0f0f0; color: #888; font-weight: 700; padding: 10px 20px; border-radius: 12px; text-align: center; font-size: 0.95rem; }
+
+  .podium-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; margin-bottom: 8px; font-weight: 700; background: #fff8f0; border: 1.5px solid #f0dcc8; }
+  .podium-row .rank { font-family: 'Fredoka One', cursive; font-size: 1.8rem; color: var(--red); width: 36px; text-align: center; flex-shrink: 0; }
+  .podium-row.rank-1 { background: #fff9e6; border-color: var(--yellow); }
+  .podium-row.rank-1 .rank { color: #c9a200; }
+  .podium-row .pts { margin-left: auto; color: var(--green); font-size: 1.1rem; font-weight: 800; }
+
+  .score-table { width: 100%; border-collapse: collapse; }
+  .score-table th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #999; font-weight: 700; padding: 8px 12px; text-align: left; border-bottom: 2px solid #f0dcc8; }
+  .score-table td { padding: 10px 12px; font-weight: 700; border-bottom: 1px solid #f8ece0; }
+  .score-table tr:last-child td { border-bottom: none; }
+
+  .answer-history { max-height: 180px; overflow-y: auto; }
+  .answer-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; margin-bottom: 4px; background: #fff8f0; font-size: 0.9rem; animation: popIn 0.25s ease; }
+  .answer-item .letter-tag { font-family: 'Fredoka One', cursive; background: var(--red); color: white; width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; flex-shrink: 0; }
+
+  .divider { border: none; border-top: 2px dashed #f0dcc8; margin: 16px 0; }
+  .section-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1.5px; color: #aaa; font-weight: 700; margin-bottom: 6px; }
+  .text-center { text-align: center; }
+  .mt-8 { margin-top: 8px; }  .mt-12 { margin-top: 12px; } .mt-16 { margin-top: 16px; }
+  h2 { font-family: 'Fredoka One', cursive; color: var(--brown); font-size: 1.4rem; margin-bottom: 16px; }
+  .subtitle { color: #888; font-size: 0.9rem; font-weight: 600; margin-top: 4px; }
+  .waiting-spinner { display: inline-block; width: 18px; height: 18px; border: 3px solid #f0dcc8; border-top-color: var(--red); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(80px); background: #333; color: white; padding: 12px 24px; border-radius: 50px; font-weight: 700; font-size: 0.95rem; z-index: 1000; transition: transform 0.3s ease; pointer-events: none; white-space: nowrap; }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  .big-apple { font-size: 5rem; display: block; animation: bounce 1s ease-in-out infinite; }
+  @keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+</style>
+</head>
+<body>
+
+<div class="apple-bg" id="apple-bg"></div>
+<div id="toast"></div>
+
+<!-- ═══ HOME ═══ -->
+<div class="page active" id="page-home">
+  <div class="logo"><span class="emoji">🍎</span> Tap That Apple</div>
+  <div class="tagline">The word game that bites back</div>
+  <div class="card">
+    <div class="input-group">
+      <label>Your Name</label>
+      <input type="text" id="home-name" placeholder="Enter your name..." maxlength="20">
+    </div>
+    <button class="btn btn-primary mt-8" onclick="createRoom(this)">🏠 Host a Game</button>
+    <div style="text-align:center;margin:14px 0;color:#ccc;font-weight:700;font-size:0.9rem;">— or —</div>
+    <div class="input-group">
+      <label>Room Code</label>
+      <input type="text" id="home-code" placeholder="Enter 4-letter code..." maxlength="4" style="text-transform:uppercase;letter-spacing:4px;font-family:'Fredoka One',cursive;font-size:1.3rem;text-align:center;">
+    </div>
+    <button class="btn btn-secondary" onclick="joinRoom(this)">🍏 Join a Room</button>
+  </div>
+</div>
+
+<!-- ═══ LOBBY ═══ -->
+<div class="page" id="page-lobby">
+  <div class="logo"><span class="emoji">🍎</span> Tap That Apple</div>
+  <div class="card">
+    <div class="room-code-label">Room Code</div>
+    <div class="room-code-display" id="lobby-code">----</div>
+    <div class="qr-wrap">
+      <img id="qr-img" src="" alt="QR Code" style="width:140px;height:140px;border-radius:12px;display:block;margin:0 auto;">
+      <div class="subtitle" style="margin-top:6px;font-size:0.78rem;">Scan to join on mobile</div>
+    </div>
+    <hr class="divider">
+    <div class="section-title">Players Waiting</div>
+    <ul class="player-list" id="lobby-players"></ul>
+    <div id="lobby-host-controls" style="display:none;margin-top:16px;">
+      <button class="btn btn-green" onclick="goToPickCategory()">🎮 Start Game!</button>
+    </div>
+    <div id="lobby-waiting-msg" class="text-center mt-12" style="color:#999;font-weight:700;font-size:0.9rem;">
+      <span class="waiting-spinner"></span> Waiting for host to start...
+    </div>
+    <button class="btn btn-gray mt-12" onclick="leaveRoom()">← Leave Room</button>
+  </div>
+</div>
+
+<!-- ═══ PICK CATEGORY ═══ -->
+<div class="page" id="page-pick-category">
+  <div class="logo" style="font-size:2rem;">📂 Pick a Category</div>
+  <div class="card" style="max-width:520px;">
+    <div id="pick-cat-round-label" style="text-align:center;color:#999;font-weight:700;font-size:0.95rem;margin-bottom:16px;"></div>
+
+    <!-- Host view -->
+    <div id="pick-cat-host-view">
+      <div class="input-group">
+        <label>Category for this round</label>
+        <input type="text" id="category-input" placeholder='e.g. "Movies", "Dog Breeds"...' maxlength="40">
+      </div>
+      <div class="section-title" style="margin-top:4px;margin-bottom:8px;">Quick suggestions — tap to fill:</div>
+      <div class="suggestion-chips" id="suggestion-chips"></div>
+      <button class="btn btn-green mt-16" onclick="confirmCategory()">▶ Start Round!</button>
+      <button class="btn btn-danger mt-8" onclick="endGame()">🏁 End Game & See Final Scores</button>
+    </div>
+
+    <!-- Non-host waiting view -->
+    <div id="pick-cat-waiting-view" style="display:none;text-align:center;">
+      <span class="big-apple">🍎</span>
+      <div style="font-family:'Fredoka One',cursive;font-size:1.4rem;color:var(--brown);margin-bottom:8px;">Hang tight!</div>
+      <div style="color:#999;font-weight:600;">The host is picking a category for this round...</div>
+    </div>
+
+    <!-- Scoreboard (shown after round 1 for everyone) -->
+    <div id="pick-cat-scoreboard-wrap" style="display:none;margin-top:20px;">
+      <hr class="divider">
+      <div class="section-title text-center">Current Scores</div>
+      <table class="score-table" id="pick-cat-scoreboard"></table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ GAME ═══ -->
+<div class="page" id="page-game" style="padding:16px;justify-content:flex-start;padding-top:20px;">
+  <div class="game-layout">
+    <div class="game-main">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <div style="font-family:'Fredoka One',cursive;font-size:1.4rem;color:var(--red);">🍎 TTA</div>
+        <div class="round-badge" id="game-round-badge"></div>
+        <div class="category-banner" style="flex:1;">📂 <span id="game-category">...</span></div>
+      </div>
+
+      <div id="game-your-turn-banner" class="your-turn-banner" style="display:none;margin-bottom:12px;">🍎 It's Your Turn! Pick a letter!</div>
+      <div id="game-watch-banner" class="watch-banner" style="display:none;margin-bottom:12px;"><span id="game-active-player-name"></span> is thinking...</div>
+      <div id="game-you-out-banner" class="watch-banner" style="display:none;margin-bottom:12px;background:#fff8e0;">✌️ You're out this round — sit back and watch!</div>
+
+      <div class="card" style="padding:16px;">
+        <div class="section-title">Available Letters</div>
+        <div class="letter-grid" id="letter-grid"></div>
+
+        <div id="answer-input-area" style="display:none;">
+          <div class="answer-area">
+            <h3>Your answer starting with: <span class="selected-letter-display" id="selected-letter-display">?</span></h3>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <input type="text" id="answer-input" placeholder="Type your answer...">
+              <button class="btn btn-primary btn-sm" onclick="submitAnswer()" style="white-space:nowrap;">Submit ✓</button>
+            </div>
+            <button class="btn btn-out mt-8" onclick="sayImOut()">😬 I'm Out!</button>
+          </div>
+        </div>
+
+        <div id="im-out-only-area" style="display:none;margin-top:10px;">
+          <button class="btn btn-out" onclick="sayImOut()">😬 I'm Out!</button>
+        </div>
+      </div>
+
+      <div class="card" style="padding:16px;margin-top:12px;">
+        <div class="section-title">Answers This Round</div>
+        <div class="answer-history" id="answer-history"></div>
+      </div>
+    </div>
+
+    <div class="game-sidebar">
+      <div class="sidebar-card">
+        <h3>Players</h3>
+        <div id="game-player-list"></div>
+      </div>
+      <div class="sidebar-card" id="host-end-game-sidebar" style="display:none;">
+        <button class="btn btn-danger" style="width:100%;padding:11px;" onclick="endGame()">🏁 End Game</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ROUND RESULTS ═══ -->
+<div class="page" id="page-round-results">
+  <div class="logo" style="font-size:2rem;">🍎 Round Over!</div>
+  <div class="card">
+    <div id="round-results-content"></div>
+    <hr class="divider">
+    <div class="section-title text-center">Scoreboard</div>
+    <table class="score-table" id="round-scoreboard"></table>
+    <div id="round-host-next" style="display:none;margin-top:16px;">
+      <button class="btn btn-green" onclick="hostNextRound()">Next Round →</button>
+      <button class="btn btn-danger mt-8" onclick="endGame()">🏁 End Game</button>
+    </div>
+    <div id="round-waiting-next" class="text-center mt-12" style="color:#999;font-weight:700;font-size:0.9rem;display:none;">
+      <span class="waiting-spinner"></span> Waiting for host to start next round...
+    </div>
+  </div>
+</div>
+
+<!-- ═══ FINAL RESULTS ═══ -->
+<div class="page" id="page-final">
+  <div class="logo" style="font-size:2rem;">🏆 Game Over!</div>
+  <div class="card">
+    <div id="final-results-content"></div>
+    <hr class="divider">
+    <table class="score-table" id="final-scoreboard"></table>
+    <div id="final-host-controls" style="display:none;margin-top:16px;">
+      <button class="btn btn-primary" onclick="playAgain()">🍎 Play Again!</button>
+    </div>
+    <button class="btn btn-gray mt-8" onclick="goHome()">← Main Menu</button>
+  </div>
+</div>
+
+<script>
+// ── Firebase ───────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyBTMCP4Jnffb1qY9I2GflQgCq_514ecCU8",
+  authDomain: "tap-that-apple.firebaseapp.com",
+  databaseURL: "https://tap-that-apple-default-rtdb.firebaseio.com",
+  projectId: "tap-that-apple",
+  storageBucket: "tap-that-apple.firebasestorage.app",
+  messagingSenderId: "927170122108",
+  appId: "1:927170122108:web:7f1aefd6a24dd0004ad4f9",
+  measurementId: "G-RHYGN41F1S"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ── State ─────────────────────────────────────────────────────
+let myId = null, myName = '', roomCode = '', isHost = false;
+let roomRef = null, gameState = null;
+
+const PLAYER_EMOJIS = ['🍎','🍏','🫐','🍓','🍒','🍑','🥝','🍌','🍋','🍊','🍇','🍉'];
+const ALL_SUGGESTIONS = [
+  "Movies","TV Shows","Animals","Foods","Countries","Cities","Sports","Brands",
+  "Celebrities","Songs","Books","Video Games","Fruits & Vegetables","Dog Breeds",
+  "Car Brands","Superheroes","Disney Characters","Cartoon Characters","Musicals",
+  "Board Games","Cocktails","Halloween Costumes","Pizza Toppings","Dances",
+  "School Subjects","Olympic Sports","Boy Bands","Ice Cream Flavors","Holidays",
+  "Clothing Brands","Kardashians","Reality TV Shows","90s Cartoons","Fast Food Chains",
+  "Things at a Beach","Things in a Kitchen","Baby Names","Jewelry Brands","Pets"
+];
+
+// ── Background apples ─────────────────────────────────────────
+(function() {
+  const bg = document.getElementById('apple-bg');
+  for (let i = 0; i < 18; i++) {
+    const s = document.createElement('span');
+    s.textContent = ['🍎','🍏','🍎','🍏','🍎'][Math.floor(Math.random()*5)];
+    s.style.left = Math.random()*100+'%';
+    s.style.animationDuration = (8+Math.random()*12)+'s';
+    s.style.animationDelay = (-Math.random()*15)+'s';
+    s.style.fontSize = (1.2+Math.random()*2)+'rem';
+    bg.appendChild(s);
+  }
+})();
+
+// ── Suggestion chips (built once, reshuffled on show) ─────────
+function buildSuggestionChips() {
+  const container = document.getElementById('suggestion-chips');
+  container.innerHTML = '';
+  shuffle([...ALL_SUGGESTIONS]).slice(0, 14).forEach(s => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = s;
+    chip.onclick = () => { document.getElementById('category-input').value = s; };
+    container.appendChild(chip);
+  });
+}
+
+// ── Utils ─────────────────────────────────────────────────────
+function genId() { return Math.random().toString(36).substr(2,12); }
+function genRoomCode() {
+  const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; let r = '';
+  for (let i=0;i<4;i++) r += c[Math.floor(Math.random()*c.length)];
+  return r;
+}
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function toast(msg, dur=2500) {
+  const e = document.getElementById('toast');
+  e.textContent = msg; e.classList.add('show');
+  clearTimeout(e._t); e._t = setTimeout(() => e.classList.remove('show'), dur);
+}
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i=a.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+
+// ── Button loading state helpers ──────────────────────────────
+function setLoading(btnEl, loading, originalText) {
+  if (loading) {
+    btnEl.disabled = true;
+    btnEl.dataset.orig = btnEl.textContent;
+    btnEl.innerHTML = '<span class="waiting-spinner"></span> Connecting...';
+  } else {
+    btnEl.disabled = false;
+    btnEl.textContent = originalText || btnEl.dataset.orig || btnEl.textContent;
+  }
+}
+
+// ── Create room ───────────────────────────────────────────────
+async function createRoom(btn) {
+  const name = document.getElementById('home-name').value.trim();
+  if (!name) { toast('Enter your name first! 🍎'); return; }
+  setLoading(btn, true);
+  let success = false;
+  try {
+    myId = genId(); myName = name; isHost = true;
+    let code, exists;
+    do {
+      code = genRoomCode();
+      exists = (await db.ref('rooms/'+code).once('value')).exists();
+    } while(exists);
+    roomCode = code;
+    const player = { id:myId, name:myName, emoji:PLAYER_EMOJIS[0], score:0, isHost:true, joinedAt:Date.now() };
+    await db.ref('rooms/'+code).set({ code, state:'lobby', host:myId, createdAt:Date.now(), currentRound:0, players:{[myId]:player} });
+    roomRef = db.ref('rooms/'+code);
+    success = true;
+  } catch(err) {
+    console.error('createRoom Firebase error:', err);
+    toast('❌ Firebase error: ' + (err.message || err));
+    setLoading(btn, false, '🏠 Host a Game');
+    myId = null; myName = ''; isHost = false;
+  }
+  if (success) {
+    setLoading(btn, false, '🏠 Host a Game');
+    setupLobby();
+  }
+}
+
+// ── Join room ─────────────────────────────────────────────────
+async function joinRoom(btn) {
+  const name = document.getElementById('home-name').value.trim();
+  const code = document.getElementById('home-code').value.trim().toUpperCase();
+  if (!name) { toast('Enter your name first! 🍎'); return; }
+  if (code.length !== 4) { toast('Enter a 4-letter room code!'); return; }
+  setLoading(btn, true);
+  let success = false;
+  try {
+    const snap = await db.ref('rooms/'+code).once('value');
+    if (!snap.exists()) { toast('Room not found! Check the code.'); setLoading(btn, false, '🍏 Join a Room'); return; }
+    const room = snap.val();
+    if (room.state !== 'lobby') { toast('Game already in progress!'); setLoading(btn, false, '🍏 Join a Room'); return; }
+    myId = genId(); myName = name; isHost = false; roomCode = code;
+    const playerCount = Object.keys(room.players||{}).length;
+    const player = { id:myId, name:myName, emoji:PLAYER_EMOJIS[playerCount%PLAYER_EMOJIS.length], score:0, isHost:false, joinedAt:Date.now() };
+    await db.ref('rooms/'+code+'/players/'+myId).set(player);
+    roomRef = db.ref('rooms/'+code);
+    success = true;
+  } catch(err) {
+    console.error('joinRoom Firebase error:', err);
+    toast('❌ Firebase error: ' + (err.message || err));
+    setLoading(btn, false, '🍏 Join a Room');
+    myId = null; myName = ''; isHost = false;
+  }
+  if (success) {
+    setLoading(btn, false, '🍏 Join a Room');
+    setupLobby();
+  }
+}
+
+// ── Lobby ─────────────────────────────────────────────────────
+function setupLobby() {
+  document.getElementById('lobby-code').textContent = roomCode;
+  const url = window.location.href.split('?')[0]+'?room='+roomCode;
+  const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(url) + '&bgcolor=fdf6ec&color=5c3317&margin=4';
+  document.getElementById('qr-img').src = qrUrl;
+  showPage('page-lobby');
+  document.getElementById('lobby-host-controls').style.display = isHost ? 'block' : 'none';
+  document.getElementById('lobby-waiting-msg').style.display = isHost ? 'none' : 'block';
+  roomRef.off();
+  roomRef.on('value', snap => {
+    if (!snap.exists()) { goHome(); return; }
+    gameState = snap.val();
+    renderLobbyPlayers(gameState.players);
+    dispatchState(gameState.state);
+  });
+}
+
+function renderLobbyPlayers(players) {
+  if (!players) return;
+  const list = document.getElementById('lobby-players'); list.innerHTML = '';
+  Object.values(players).sort((a,b) => a.joinedAt-b.joinedAt).forEach(p => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="apple-icon">${p.emoji}</span>${p.name}${p.isHost?'<span class="host-badge">Host</span>':''}`;
+    list.appendChild(li);
+  });
+}
+
+// ── State router ──────────────────────────────────────────────
+function dispatchState(state) {
+  if (state === 'lobby') return; // stay on lobby page
+  if (state === 'pick_category') { showPickCategory(); return; }
+  if (state === 'playing') { showPage('page-game'); renderGame(); return; }
+  if (state === 'round_results') { showRoundResults(); return; }
+  if (state === 'game_over') { showFinalResults(); return; }
+}
+
+// ── Category picker ───────────────────────────────────────────
+async function goToPickCategory() {
+  if (!isHost) return;
+  await roomRef.update({ state: 'pick_category' });
+}
+
+function showPickCategory() {
+  showPage('page-pick-category');
+  const round = (gameState.currentRound||0) + 1;
+  document.getElementById('pick-cat-round-label').textContent = round === 1 ? 'Round 1' : `Round ${round}`;
+
+  if (isHost) {
+    document.getElementById('pick-cat-host-view').style.display = 'block';
+    document.getElementById('pick-cat-waiting-view').style.display = 'none';
+    document.getElementById('category-input').value = '';
+    buildSuggestionChips(); // refresh chip suggestions each round
+    setTimeout(() => document.getElementById('category-input').focus(), 100);
+  } else {
+    document.getElementById('pick-cat-host-view').style.display = 'none';
+    document.getElementById('pick-cat-waiting-view').style.display = 'block';
+  }
+
+  // Show scoreboard after first round
+  const sbWrap = document.getElementById('pick-cat-scoreboard-wrap');
+  if (gameState.currentRound > 0 && gameState.players && gameState.turnOrder) {
+    sbWrap.style.display = 'block';
+    renderScoreTable('pick-cat-scoreboard', gameState.players, gameState.turnOrder);
+  } else {
+    sbWrap.style.display = 'none';
+  }
+}
+
+async function confirmCategory() {
+  if (!isHost) return;
+  const cat = document.getElementById('category-input').value.trim();
+  if (!cat) { toast('Enter a category first!'); return; }
+  const players = gameState.players;
+  const turnOrder = gameState.turnOrder || Object.keys(players).sort((a,b) => players[a].joinedAt - players[b].joinedAt);
+  const nextRound = (gameState.currentRound||0) + 1;
+  await roomRef.update({
+    state: 'playing',
+    currentRound: nextRound,
+    turnOrder,
+    roundState: buildRoundState(turnOrder, cat)
+  });
+}
+
+function buildRoundState(playerIds, category) {
+  const outPlayers = {};
+  playerIds.forEach(id => { outPlayers[id] = false; });
+  return { category, usedLetters:{}, answers:{}, outPlayers, outOrder:[], selectedLetter:null, pickerIndex:0 };
+}
+
+// ── Game render ───────────────────────────────────────────────
+function renderGame() {
+  const rs = gameState.roundState;
+  const players = gameState.players;
+  const turnOrder = gameState.turnOrder;
+  const activePlayers = turnOrder.filter(id => !rs.outPlayers[id]);
+  const currentPickerId = activePlayers.length > 0 ? activePlayers[rs.pickerIndex % activePlayers.length] : null;
+  const isMyTurn = currentPickerId === myId;
+  const imOut = rs.outPlayers[myId];
+
+  document.getElementById('game-round-badge').textContent = `Round ${gameState.currentRound}`;
+  document.getElementById('game-category').textContent = rs.category;
+
+  document.getElementById('game-your-turn-banner').style.display = isMyTurn ? 'block' : 'none';
+  document.getElementById('game-you-out-banner').style.display = (!isMyTurn && imOut) ? 'block' : 'none';
+  const wb = document.getElementById('game-watch-banner');
+  if (!isMyTurn && !imOut && currentPickerId) {
+    wb.style.display = 'block';
+    document.getElementById('game-active-player-name').textContent = (players[currentPickerId]?.emoji||'🍎')+' '+(players[currentPickerId]?.name||'?');
+  } else { wb.style.display = 'none'; }
+
+  renderLetterGrid(rs.usedLetters, isMyTurn, rs.selectedLetter);
+
+  const inputArea = document.getElementById('answer-input-area');
+  const outOnlyArea = document.getElementById('im-out-only-area');
+  if (isMyTurn && rs.selectedLetter) {
+    inputArea.style.display = 'block'; outOnlyArea.style.display = 'none';
+    document.getElementById('selected-letter-display').textContent = rs.selectedLetter;
+    setTimeout(() => document.getElementById('answer-input').focus(), 50);
+  } else if (isMyTurn && !rs.selectedLetter) {
+    inputArea.style.display = 'none'; outOnlyArea.style.display = 'block';
+  } else {
+    inputArea.style.display = 'none'; outOnlyArea.style.display = 'none';
+  }
+
+  renderGamePlayerList(players, turnOrder, rs, currentPickerId);
+  renderAnswerHistory(rs.answers, players);
+  document.getElementById('host-end-game-sidebar').style.display = isHost ? 'block' : 'none';
+}
+
+function renderLetterGrid(usedLetters, isMyTurn, selectedLetter) {
+  const grid = document.getElementById('letter-grid'); grid.innerHTML = '';
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(letter => {
+    const btn = document.createElement('button');
+    const used = usedLetters && usedLetters[letter];
+    const sel = selectedLetter === letter;
+    btn.className = 'letter-btn ' + (used ? 'used' : sel ? 'selected' : 'available');
+    btn.textContent = letter;
+    if (!used && isMyTurn && !selectedLetter) btn.onclick = () => pickLetter(letter);
+    else btn.disabled = true;
+    grid.appendChild(btn);
+  });
+}
+
+function renderGamePlayerList(players, turnOrder, rs, currentPickerId) {
+  const c = document.getElementById('game-player-list'); c.innerHTML = '';
+  turnOrder.forEach(id => {
+    const p = players[id]; if (!p) return;
+    const div = document.createElement('div');
+    div.className = 'player-row' + (id===currentPickerId?' active-turn':'') + (rs.outPlayers[id]?' out':'');
+    div.innerHTML = `<span>${p.emoji}</span><span>${p.name}${id===myId?' (you)':''}${rs.outPlayers[id]?'<span class="out-badge">OUT</span>':''}</span><span class="score">${p.score}pt</span>`;
+    c.appendChild(div);
+  });
+}
+
+function renderAnswerHistory(answers, players) {
+  const c = document.getElementById('answer-history'); c.innerHTML = '';
+  if (!answers || Object.keys(answers).length === 0) {
+    c.innerHTML = '<div style="color:#ccc;font-size:0.85rem;text-align:center;padding:10px;">No answers yet</div>'; return;
+  }
+  Object.values(answers).sort((a,b) => a.time-b.time).forEach(ans => {
+    const p = players[ans.playerId];
+    const div = document.createElement('div'); div.className = 'answer-item';
+    div.innerHTML = `<div class="letter-tag">${ans.letter}</div><div><strong>${p?.name||'?'}</strong>: ${ans.answer}</div>`;
+    c.appendChild(div);
+  });
+  c.scrollTop = c.scrollHeight;
+}
+
+// ── Game actions ──────────────────────────────────────────────
+function amICurrentPicker() {
+  const rs = gameState?.roundState, turnOrder = gameState?.turnOrder;
+  if (!rs || !turnOrder) return false;
+  const active = turnOrder.filter(id => !rs.outPlayers[id]);
+  if (active.length === 0) return false;
+  return active[rs.pickerIndex % active.length] === myId;
+}
+
+async function pickLetter(letter) {
+  if (!amICurrentPicker()) { toast("It's not your turn!"); return; }
+  await roomRef.child('roundState/selectedLetter').set(letter);
+  document.getElementById('answer-input').value = '';
+}
+
+async function submitAnswer() {
+  const rs = gameState.roundState;
+  if (!rs.selectedLetter) { toast('Pick a letter first!'); return; }
+  const answer = document.getElementById('answer-input').value.trim();
+  if (!answer) { toast('Type an answer!'); return; }
+  const letter = rs.selectedLetter;
+  if (!answer.toUpperCase().startsWith(letter)) { toast(`Answer must start with "${letter}"!`); return; }
+  await roomRef.child('roundState/answers/'+letter).set({ letter, answer, playerId:myId, time:Date.now() });
+  await roomRef.child('roundState/usedLetters/'+letter).set(myId);
+  await roomRef.child('roundState/selectedLetter').set(null);
+  document.getElementById('answer-input').value = '';
+  await advanceTurn();
+}
+
+async function sayImOut() {
+  const rs = gameState.roundState, turnOrder = gameState.turnOrder;
+  const outOrder = [...(rs.outOrder||[]), myId];
+  await roomRef.child('roundState/outPlayers/'+myId).set(true);
+  await roomRef.child('roundState/outOrder').set(outOrder);
+  await roomRef.child('roundState/selectedLetter').set(null);
+  const newOut = {...rs.outPlayers, [myId]:true};
+  if (turnOrder.every(id => newOut[id])) await endRound();
+  else await advanceTurn(newOut);
+  toast("You're out for this round!");
+}
+
+async function advanceTurn(overrideOut) {
+  const rs = gameState.roundState, turnOrder = gameState.turnOrder;
+  const out = overrideOut || rs.outPlayers || {};
+  const active = turnOrder.filter(id => !out[id]);
+  if (active.length <= 1) { await endRound(); return; }
+  if (Object.keys(rs.usedLetters||{}).length >= 26) { await endRound(); return; }
+  await roomRef.child('roundState/pickerIndex').set(((rs.pickerIndex||0)+1) % active.length);
+}
+
+async function endRound() {
+  const rs = gameState.roundState, players = gameState.players, turnOrder = gameState.turnOrder;
+  const outOrder = rs.outOrder || [];
+  const notOut = turnOrder.filter(id => !outOrder.includes(id));
+  // outOrder[0] = first out (worst), notOut players = best (still standing)
+  const allRanked = [...outOrder, ...notOut];
+  const pointsAwarded = {};
+  allRanked.forEach((id, idx) => { pointsAwarded[id] = idx + 1; });
+  const updates = {};
+  turnOrder.forEach(id => { updates['players/'+id+'/score'] = (players[id]?.score||0) + (pointsAwarded[id]||1); });
+  updates['roundScores/round'+gameState.currentRound] = pointsAwarded;
+  updates['state'] = 'round_results';
+  await roomRef.update(updates);
+}
+
+// ── Round results ─────────────────────────────────────────────
+function showRoundResults() {
+  showPage('page-round-results');
+  const rs = gameState.roundState, players = gameState.players, turnOrder = gameState.turnOrder;
+  const roundScores = gameState.roundScores?.['round'+gameState.currentRound] || {};
+  const ranked = turnOrder.map(id => ({id, pts:roundScores[id]||0, player:players[id]})).sort((a,b) => b.pts-a.pts);
+  const c = document.getElementById('round-results-content');
+  c.innerHTML = `<h2 style="text-align:center;margin-bottom:8px;">Round ${gameState.currentRound} Results</h2>
+    <div class="section-title text-center" style="margin-bottom:14px;">Category: ${rs.category}</div>`;
+  ranked.forEach((r,i) => {
+    const div = document.createElement('div');
+    div.className = 'podium-row' + (i===0?' rank-1':'');
+    div.innerHTML = `<div class="rank">${i+1}</div><div>${r.player.emoji} ${r.player.name}</div><div class="pts">+${r.pts}pt</div>`;
+    c.appendChild(div);
+  });
+  renderScoreTable('round-scoreboard', players, turnOrder);
+  document.getElementById('round-host-next').style.display = isHost ? 'block' : 'none';
+  document.getElementById('round-waiting-next').style.display = isHost ? 'none' : 'block';
+}
+
+function renderScoreTable(tableId, players, turnOrder) {
+  const t = document.getElementById(tableId); if (!t) return;
+  const sorted = [...turnOrder].sort((a,b) => (players[b]?.score||0)-(players[a]?.score||0));
+  t.innerHTML = '<tr><th>Player</th><th>Total Score</th></tr>';
+  sorted.forEach(id => {
+    const p = players[id]; if (!p) return;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${p.emoji} ${p.name}${id===myId?' (you)':''}</td><td style="color:var(--green);font-size:1.1rem;">${p.score}pt</td>`;
+    t.appendChild(tr);
+  });
+}
+
+async function hostNextRound() {
+  if (!isHost) return;
+  await roomRef.update({ state: 'pick_category' });
+}
+
+// ── End game ──────────────────────────────────────────────────
+async function endGame() {
+  if (!isHost) return;
+  // If a round is mid-play, score it first
+  if (gameState.state === 'playing') {
+    const rs = gameState.roundState, turnOrder = gameState.turnOrder, players = gameState.players;
+    const outOrder = rs.outOrder || [];
+    const notOut = turnOrder.filter(id => !outOrder.includes(id));
+    const allRanked = [...outOrder, ...notOut];
+    const pointsAwarded = {};
+    allRanked.forEach((id,idx) => { pointsAwarded[id] = idx+1; });
+    const updates = {};
+    turnOrder.forEach(id => { updates['players/'+id+'/score'] = (players[id]?.score||0)+(pointsAwarded[id]||1); });
+    updates['roundScores/round'+gameState.currentRound] = pointsAwarded;
+    updates['state'] = 'game_over';
+    await roomRef.update(updates);
+  } else {
+    await roomRef.update({ state: 'game_over' });
+  }
+}
+
+// ── Final results ─────────────────────────────────────────────
+function showFinalResults() {
+  showPage('page-final');
+  const players = gameState.players, turnOrder = gameState.turnOrder || Object.keys(players);
+  const ranked = [...turnOrder].map(id => ({id, pts:players[id]?.score||0, player:players[id]})).sort((a,b) => b.pts-a.pts);
+  const c = document.getElementById('final-results-content');
+  const medals = ['🥇','🥈','🥉'];
+  c.innerHTML = `<h2 style="text-align:center;margin-bottom:14px;">Final Rankings</h2>`;
+  ranked.forEach((r,i) => {
+    const div = document.createElement('div');
+    div.className = 'podium-row' + (i===0?' rank-1':'');
+    div.innerHTML = `<div class="rank">${medals[i]||(i+1)}</div><div>${r.player.emoji} ${r.player.name}${r.id===myId?' 👈':''}</div><div class="pts">${r.pts}pt</div>`;
+    c.appendChild(div);
+  });
+  renderScoreTable('final-scoreboard', players, turnOrder);
+  document.getElementById('final-host-controls').style.display = isHost ? 'block' : 'none';
+}
+
+async function playAgain() {
+  if (!isHost) return;
+  const players = gameState.players, turnOrder = gameState.turnOrder || Object.keys(players);
+  const updates = { state:'lobby', roundState:null, roundScores:null, currentRound:0, turnOrder:null };
+  turnOrder.forEach(id => { updates['players/'+id+'/score'] = 0; });
+  await roomRef.update(updates);
+  setupLobby();
+}
+
+// ── Leave / Home ──────────────────────────────────────────────
+async function leaveRoom() {
+  if (roomRef) { await roomRef.child('players/'+myId).remove(); roomRef.off(); }
+  goHome();
+}
+function goHome() {
+  if (roomRef) roomRef.off();
+  roomCode = ''; isHost = false; gameState = null;
+  showPage('page-home');
+}
+
+// ── Auto-join from URL ─────────────────────────────────────────
+window.addEventListener('load', () => {
+  const code = new URLSearchParams(window.location.search).get('room');
+  if (code) document.getElementById('home-code').value = code.toUpperCase();
+});
+
+// ── Key bindings ──────────────────────────────────────────────
+document.getElementById('answer-input').addEventListener('keydown', e => { if(e.key==='Enter') submitAnswer(); });
+document.getElementById('home-code').addEventListener('keydown', e => { if(e.key==='Enter') joinRoom(); });
+document.getElementById('category-input').addEventListener('keydown', e => { if(e.key==='Enter') confirmCategory(); });
+</script>
+</body>
+</html>
