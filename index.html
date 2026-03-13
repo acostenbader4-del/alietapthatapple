@@ -79,8 +79,8 @@
   .category-banner { background: var(--red); color: white; font-family: 'Fredoka One', cursive; font-size: clamp(1rem,4vw,1.3rem); padding: 9px 18px; border-radius: 50px; text-align: center; box-shadow: 0 4px 0 var(--red-dark); letter-spacing: 1px; }
   .round-badge { background: #f0e8de; padding: 5px 14px; border-radius: 20px; font-weight: 800; font-size: 0.85rem; color: var(--brown); }
 
-  .letter-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 6px; margin: 14px 0; }
-  @media (max-width: 400px) { .letter-grid { grid-template-columns: repeat(5,1fr); gap: 5px; } }
+  .letter-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin: 14px 0; }
+  @media (max-width: 400px) { .letter-grid { grid-template-columns: repeat(4, 1fr); gap: 5px; } }
   .letter-btn { aspect-ratio: 1; border-radius: 10px; border: none; font-family: 'Fredoka One', cursive; font-size: 1.15rem; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; }
   .letter-btn.available { background: white; color: var(--red); box-shadow: 0 3px 0 #e0c8b0; border: 2px solid #f0dcc8; }
   .letter-btn.available:hover { transform: translateY(-2px) scale(1.05); }
@@ -236,11 +236,19 @@
         <div id="answer-input-area" style="display:none;">
           <div class="answer-area">
             <h3>Your answer starting with: <span class="selected-letter-display" id="selected-letter-display">?</span></h3>
-            <div style="display:flex;gap:8px;margin-top:8px;">
-              <input type="text" id="answer-input" placeholder="Type your answer...">
-              <button class="btn btn-primary btn-sm" onclick="submitAnswer()" style="white-space:nowrap;">Submit ✓</button>
+            <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">
+              <button class="btn btn-green" onclick="sayOutLoud()" style="flex:1;">🗣️ I Said It!</button>
+              <button class="btn btn-out" onclick="sayImOut()" style="flex:1;">😬 I'm Out!</button>
             </div>
-            <button class="btn btn-out mt-8" onclick="sayImOut()">😬 I'm Out!</button>
+            <div style="margin-top:10px;">
+              <button onclick="toggleTypeMode()" style="background:none;border:none;color:#aaa;font-family:'Nunito',sans-serif;font-weight:700;font-size:0.8rem;cursor:pointer;text-decoration:underline;padding:0;">⌨️ Type answer instead</button>
+            </div>
+            <div id="type-mode-area" style="display:none;margin-top:10px;">
+              <div style="display:flex;gap:8px;">
+                <input type="text" id="answer-input" placeholder="Type your answer...">
+                <button class="btn btn-primary btn-sm" onclick="submitAnswer()" style="white-space:nowrap;">Submit ✓</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -583,7 +591,7 @@ function renderGame() {
 
 function renderLetterGrid(usedLetters, isMyTurn, selectedLetter) {
   const grid = document.getElementById('letter-grid'); grid.innerHTML = '';
-  'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(letter => {
+  ACTIVE_LETTERS.forEach(letter => {
     const btn = document.createElement('button');
     const used = usedLetters && usedLetters[letter];
     const sel = selectedLetter === letter;
@@ -621,6 +629,9 @@ function renderAnswerHistory(answers, players) {
 }
 
 // ── Game actions ──────────────────────────────────────────────
+// Letters used: A B C D E F G H I K L M N O P R S T (18 letters — J Q U V W X Y Z removed)
+const ACTIVE_LETTERS = 'ABCDEFGHIKLMNOPRST'.split('');
+
 function amICurrentPicker() {
   const rs = gameState?.roundState, turnOrder = gameState?.turnOrder;
   if (!rs || !turnOrder) return false;
@@ -629,26 +640,77 @@ function amICurrentPicker() {
   return active[rs.pickerIndex % active.length] === myId;
 }
 
-async function pickLetter(letter) {
-  if (!amICurrentPicker()) { toast("It's not your turn!"); return; }
-  await roomRef.child('roundState/selectedLetter').set(letter);
-  document.getElementById('answer-input').value = '';
+function toggleTypeMode() {
+  const area = document.getElementById('type-mode-area');
+  const isHidden = area.style.display === 'none';
+  area.style.display = isHidden ? 'block' : 'none';
+  if (isHidden) setTimeout(() => document.getElementById('answer-input').focus(), 50);
+}
+
+async function sayOutLoud() {
+  // Player said answer out loud — just mark letter used and advance
+  const rs = gameState.roundState;
+  if (!rs.selectedLetter) return;
+  const letter = rs.selectedLetter;
+  const usedLetters = rs.usedLetters || {};
+  const newUsed = {...usedLetters, [letter]: myId};
+  const allUsed = ACTIVE_LETTERS.every(l => newUsed[l]);
+
+  await roomRef.child('roundState/answers/'+letter).set({ letter, answer: '(said out loud)', playerId:myId, time:Date.now() });
+  await roomRef.child('roundState/usedLetters/'+letter).set(myId);
+
+  if (allUsed) {
+    // Reset all letters and keep going!
+    await roomRef.child('roundState/usedLetters').set({});
+    await roomRef.child('roundState/selectedLetter').set(null);
+    toast('🔄 All letters used — resetting!');
+  } else {
+    await roomRef.child('roundState/selectedLetter').set(null);
+  }
+  await advanceTurn();
+}
+
+function stripArticles(answer) {
+  // Remove leading "a ", "an ", "the " (case-insensitive)
+  return answer.replace(/^(the|an?)\s+/i, '').trim();
 }
 
 async function submitAnswer() {
   const rs = gameState.roundState;
   if (!rs.selectedLetter) { toast('Pick a letter first!'); return; }
-  const answer = document.getElementById('answer-input').value.trim();
-  if (!answer) { toast('Type an answer!'); return; }
+  const rawAnswer = document.getElementById('answer-input').value.trim();
+  if (!rawAnswer) { toast('Type an answer!'); return; }
   const letter = rs.selectedLetter;
-  if (!answer.toUpperCase().startsWith(letter)) { toast(`Answer must start with "${letter}"!`); return; }
-  await roomRef.child('roundState/answers/'+letter).set({ letter, answer, playerId:myId, time:Date.now() });
+  const stripped = stripArticles(rawAnswer);
+  if (!stripped.toUpperCase().startsWith(letter)) {
+    toast(`Answer must start with "${letter}"! (articles like "the/a" are ignored)`);
+    return;
+  }
+  const usedLetters = rs.usedLetters || {};
+  const newUsed = {...usedLetters, [letter]: myId};
+  const allUsed = ACTIVE_LETTERS.every(l => newUsed[l]);
+
+  await roomRef.child('roundState/answers/'+letter).set({ letter, answer: rawAnswer, playerId:myId, time:Date.now() });
   await roomRef.child('roundState/usedLetters/'+letter).set(myId);
-  await roomRef.child('roundState/selectedLetter').set(null);
   document.getElementById('answer-input').value = '';
+  document.getElementById('type-mode-area').style.display = 'none';
+
+  if (allUsed) {
+    await roomRef.child('roundState/usedLetters').set({});
+    await roomRef.child('roundState/selectedLetter').set(null);
+    toast('🔄 All letters used — resetting!');
+  } else {
+    await roomRef.child('roundState/selectedLetter').set(null);
+  }
   await advanceTurn();
 }
 
+async function pickLetter(letter) {
+  if (!amICurrentPicker()) { toast("It's not your turn!"); return; }
+  await roomRef.child('roundState/selectedLetter').set(letter);
+  document.getElementById('answer-input').value = '';
+  document.getElementById('type-mode-area').style.display = 'none';
+}
 async function sayImOut() {
   const rs = gameState.roundState, turnOrder = gameState.turnOrder;
   const outOrder = [...(rs.outOrder||[]), myId];
@@ -666,7 +728,7 @@ async function advanceTurn(overrideOut) {
   const out = overrideOut || rs.outPlayers || {};
   const active = turnOrder.filter(id => !out[id]);
   if (active.length <= 1) { await endRound(); return; }
-  if (Object.keys(rs.usedLetters||{}).length >= 26) { await endRound(); return; }
+  // No letter-exhaustion end — letters reset when all used, round only ends when everyone is out
   await roomRef.child('roundState/pickerIndex').set(((rs.pickerIndex||0)+1) % active.length);
 }
 
